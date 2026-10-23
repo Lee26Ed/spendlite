@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { randomUUID } from 'expo-crypto';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { CURRENCIES, DEFAULT_CURRENCY, today } from './format';
+import { CURRENCIES, DEFAULT_CURRENCY } from './format';
+import { reconcilePlanItem, removePlanItem, syncItemFromPayment, untickForDeletedPayment } from './planLinks';
 import type { Account, AppData, Debt, DebtPayment, Plan, PlanItem, Settings, Transaction } from './types';
 
 const STORAGE_KEY = 'spendlite:data:v1';
@@ -18,6 +19,7 @@ export const emptyData: AppData = {
 
 export const newId = () => randomUUID();
 const now = () => new Date().toISOString();
+const ids = { newId, now };
 
 type New<T> = Omit<T, 'id' | 'createdAt'>;
 
@@ -29,19 +31,7 @@ export interface TransferInput {
   note?: string;
 }
 
-/** The note written on a transaction recorded from a plan item. */
-export const planItemNote = (plan: Pick<Plan, 'name'>, item: Pick<PlanItem, 'label'>) => `${item.label} (plan: ${plan.name})`;
-
-/** The transaction recorded for a done plan item, if it still exists. */
-export function findPlanItemTransaction(plan: Plan, item: PlanItem, transactions: Transaction[]) {
-  if (item.transactionId) return transactions.find((t) => t.id === item.transactionId);
-  if (!item.done || !plan.accountId) return undefined;
-  // Items recorded before links were stored: match the note the app wrote at the time.
-  const note = planItemNote(plan, item);
-  return transactions.find(
-    (t) => !t.planId && !t.transferId && !t.debtId && t.accountId === plan.accountId && t.type === item.type && t.amount === item.amount && t.note === note,
-  );
-}
+export { findPlanItemPayment, findPlanItemTransaction, planItemNote } from './planLinks';
 
 export interface PaymentInput {
   date: string;
@@ -62,13 +52,13 @@ interface DataContextValue {
   updatePlan: (id: string, patch: Partial<Plan>) => void;
   deletePlan: (id: string) => void;
   /**
-   * Marks a plan item done or not done. Marking done with `recordIn` also records it in that account;
-   * marking not done removes any transaction recorded for it.
+   * Marks a plan item done or not done. Marking done with `recordIn` also records it in that account,
+   * and a planned debt payment adds a payment to its debt; marking not done removes both.
    */
   setPlanItemDone: (planId: string, itemId: string, done: boolean, recordIn?: string) => void;
-  /** Adds or replaces a plan item, keeping any recorded transaction in step (removed if no longer done). */
+  /** Adds or replaces a plan item, keeping its recorded transaction and debt payment in step (removed if no longer done). */
   savePlanItem: (planId: string, item: PlanItem) => void;
-  deletePlanItem: (planId: string, itemId: string, opts: { removeTransaction: boolean }) => void;
+  deletePlanItem: (planId: string, itemId: string, opts: { removeRecorded: boolean }) => void;
   /** Creates (or, with `transferId`, replaces) both legs of a transfer. Returns the transfer id. */
   saveTransfer: (input: TransferInput, transferId?: string) => string;
   deleteTransfer: (transferId: string) => void;
@@ -171,81 +161,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deletePlan = useCallback((id: string) => {
-    // Recorded expenses stay in their accounts: that money was really spent.
+    // Recorded expenses and debt payments stay: that money really moved.
     setData((d) => ({
       ...d,
       plans: d.plans.filter((p) => p.id !== id),
       transactions: d.transactions.map((t) => (t.planId === id ? { ...t, planId: undefined } : t)),
+      debts: d.debts.map((x) => ({
+        ...x,
+        payments: x.payments.map((p) => (p.planId === id ? { ...p, planId: undefined, planItemId: undefined } : p)),
+      })),
     }));
   }, []);
 
   const setPlanItemDone = useCallback((planId: string, itemId: string, done: boolean, recordIn?: string) => {
     setData((d) => {
-      const plan = d.plans.find((p) => p.id === planId);
-      const item = plan?.items.find((i) => i.id === itemId);
-      if (!plan || !item) return d;
-      let transactions = d.transactions;
-      let transactionId = item.transactionId;
-      if (done && recordIn) {
-        const tx: Transaction = {
-          id: newId(),
-          accountId: recordIn,
-          type: item.type,
-          amount: item.amount,
-          category: item.category || 'Other',
-          note: planItemNote(plan, item),
-          date: today(),
-          planId,
-          createdAt: now(),
-        };
-        transactions = [...transactions, tx];
-        transactionId = tx.id;
-      } else if (!done) {
-        const linked = findPlanItemTransaction(plan, item, transactions);
-        if (linked) transactions = transactions.filter((t) => t.id !== linked.id);
-        transactionId = undefined;
-      }
-      const items = plan.items.map((i) => (i.id === itemId ? { ...i, done, transactionId } : i));
-      return { ...d, transactions, plans: d.plans.map((p) => (p.id === planId ? { ...p, items } : p)) };
+      const item = d.plans.find((p) => p.id === planId)?.items.find((i) => i.id === itemId);
+      return item ? reconcilePlanItem(d, planId, item, { ...item, done }, ids, { recordIn: done ? recordIn : undefined }) : d;
     });
   }, []);
 
   const savePlanItem = useCallback((planId: string, item: PlanItem) => {
     setData((d) => {
-      const plan = d.plans.find((p) => p.id === planId);
-      if (!plan) return d;
-      const previous = plan.items.find((i) => i.id === item.id);
-      const linked = previous ? findPlanItemTransaction(plan, previous, d.transactions) : undefined;
-      let transactions = d.transactions;
-      let next = item;
-      if (linked && item.done) {
-        transactions = transactions.map((t) =>
-          t.id === linked.id
-            ? { ...t, type: item.type, amount: item.amount, category: item.category || 'Other', note: planItemNote(plan, item), planId }
-            : t,
-        );
-        next = { ...item, transactionId: linked.id };
-      } else if (linked) {
-        transactions = transactions.filter((t) => t.id !== linked.id);
-        next = { ...item, transactionId: undefined };
-      }
-      const items = previous ? plan.items.map((i) => (i.id === item.id ? next : i)) : [...plan.items, next];
-      return { ...d, transactions, plans: d.plans.map((p) => (p.id === planId ? { ...p, items } : p)) };
+      const previous = d.plans.find((p) => p.id === planId)?.items.find((i) => i.id === item.id);
+      return reconcilePlanItem(d, planId, previous, item, ids);
     });
   }, []);
 
-  const deletePlanItem = useCallback((planId: string, itemId: string, opts: { removeTransaction: boolean }) => {
-    setData((d) => {
-      const plan = d.plans.find((p) => p.id === planId);
-      const item = plan?.items.find((i) => i.id === itemId);
-      if (!plan || !item) return d;
-      const linked = opts.removeTransaction ? findPlanItemTransaction(plan, item, d.transactions) : undefined;
-      return {
-        ...d,
-        transactions: linked ? d.transactions.filter((t) => t.id !== linked.id) : d.transactions,
-        plans: d.plans.map((p) => (p.id === planId ? { ...p, items: p.items.filter((i) => i.id !== itemId) } : p)),
-      };
-    });
+  const deletePlanItem = useCallback((planId: string, itemId: string, opts: { removeRecorded: boolean }) => {
+    setData((d) => removePlanItem(d, planId, itemId, ids, opts.removeRecorded));
   }, []);
 
   const saveTransfer = useCallback((input: TransferInput, transferId?: string) => {
@@ -291,10 +234,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const deleteDebt = useCallback((id: string) => {
     // Expenses already recorded in accounts stay: that money really left the account.
+    // Plan items that paid toward it keep their done state but no longer point at it.
     setData((d) => ({
       ...d,
       debts: d.debts.filter((x) => x.id !== id),
       transactions: d.transactions.map((t) => (t.debtId === id ? { ...t, debtId: undefined } : t)),
+      plans: d.plans.map((p) => ({
+        ...p,
+        items: p.items.map((i) => (i.debtId === id ? { ...i, debtId: undefined, debtPaymentId: undefined } : i)),
+      })),
     }));
   }, []);
 
@@ -331,13 +279,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
 
         const payment: DebtPayment = {
+          ...existing,
           id: existing?.id ?? newId(),
           createdAt: existing?.createdAt ?? now(),
           ...input,
           transactionId,
         };
         const payments = existing ? debt.payments.map((p) => (p.id === existing.id ? payment : p)) : [...debt.payments, payment];
-        return { ...d, transactions, debts: d.debts.map((x) => (x.id === debtId ? { ...x, payments } : x)) };
+        // A payment planned in a plan keeps that plan item's amount and date in step.
+        return syncItemFromPayment({ ...d, transactions, debts: d.debts.map((x) => (x.id === debtId ? { ...x, payments } : x)) }, payment);
       });
     },
     [],
@@ -346,11 +296,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const deleteDebtPayment = useCallback((debtId: string, paymentId: string) => {
     setData((d) => {
       const payment = d.debts.find((x) => x.id === debtId)?.payments.find((p) => p.id === paymentId);
-      return {
+      if (!payment) return d;
+      const next = {
         ...d,
-        transactions: payment?.transactionId ? d.transactions.filter((t) => t.id !== payment.transactionId) : d.transactions,
+        transactions: payment.transactionId ? d.transactions.filter((t) => t.id !== payment.transactionId) : d.transactions,
         debts: d.debts.map((x) => (x.id === debtId ? { ...x, payments: x.payments.filter((p) => p.id !== paymentId) } : x)),
       };
+      // A payment that came from a plan un-ticks its plan item.
+      return untickForDeletedPayment(next, payment);
     });
   }, []);
 

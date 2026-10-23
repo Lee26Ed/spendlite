@@ -15,6 +15,7 @@ export default function DebtPaymentForm() {
   const currency = data.settings.currency;
   const debt = data.debts.find((d) => d.id === params.debtId);
   const existing = debt?.payments.find((p) => p.id === params.paymentId);
+  const plannedIn = existing?.planId ? data.plans.find((p) => p.id === existing.planId) : undefined;
   const latest = debt ? sortPayments(debt.payments).at(-1) : undefined;
   const linkedTx = (id?: string) => (id ? data.transactions.find((t) => t.id === id) : undefined);
   const accounts = data.accounts.filter((a) => !a.archived || a.id === linkedTx(existing?.transactionId)?.accountId);
@@ -63,6 +64,12 @@ export default function DebtPaymentForm() {
   return (
     <FormScroll contentContainerStyle={{ padding: space.lg, gap: space.xl, paddingBottom: 48 }}>
       <Stack.Screen options={{ title: existing ? 'Edit payment' : `Pay ${debt.name}` }} />
+
+      {plannedIn ? (
+        <T variant="caption">
+          Planned in “{plannedIn.name}”. Changing the amount or date here updates the plan item; deleting it un-ticks the item.
+        </T>
+      ) : null}
 
       <View style={s.amountBox}>
         <T variant="label">Payment amount</T>

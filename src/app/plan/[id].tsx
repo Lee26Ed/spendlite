@@ -5,19 +5,21 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Amount, Button, Card, Chip, EmptyState, HeroCard, IconButton, onHero, ProgressBar, Row, Segmented, T } from '@/components/ui';
 import { summarizePlan } from '@/lib/calc';
+import { formatDate, formatMoney, today } from '@/lib/format';
 import { useData } from '@/lib/store';
 import { colors, radius, space } from '@/lib/theme';
 import type { PlanItem, TxType } from '@/lib/types';
 
 type ItemFilter = 'all' | 'pending' | 'done';
-type ItemSort = 'added' | 'amount' | 'name';
+type ItemSort = 'added' | 'date' | 'amount' | 'name';
 
-const SORT_LABEL: Record<ItemSort, string> = { added: 'Order added', amount: 'Amount', name: 'Name' };
-const NEXT_SORT: Record<ItemSort, ItemSort> = { added: 'amount', amount: 'name', name: 'added' };
+const SORT_LABEL: Record<ItemSort, string> = { added: 'Order added', date: 'Date', amount: 'Amount', name: 'Name' };
+const NEXT_SORT: Record<ItemSort, ItemSort> = { added: 'date', date: 'amount', amount: 'name', name: 'added' };
 
 export default function PlanScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, setPlanItemDone } = useData();
+  const currency = data.settings.currency;
   const plan = data.plans.find((p) => p.id === id);
   const [filter, setFilter] = useState<ItemFilter>('all');
   const [sort, setSort] = useState<ItemSort>('added');
@@ -28,6 +30,8 @@ export default function PlanScreen() {
   const items = useMemo(() => {
     if (!plan) return [];
     const list = plan.items.filter((i) => (filter === 'all' ? true : filter === 'done' ? i.done : !i.done));
+    // Undated items go last.
+    if (sort === 'date') return [...list].sort((a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999'));
     if (sort === 'amount') return [...list].sort((a, b) => b.amount - a.amount);
     if (sort === 'name') return [...list].sort((a, b) => a.label.localeCompare(b.label));
     return list;
@@ -38,11 +42,25 @@ export default function PlanScreen() {
   const openItem = (params: { itemId?: string; type?: TxType }) =>
     router.push({ pathname: '/plan-item', params: { planId: plan.id, ...params } });
 
+  const debtOf = (item: PlanItem) => (item.type === 'expense' && item.debtId ? data.debts.find((d) => d.id === item.debtId) : undefined);
+
   const toggleDone = (item: PlanItem) => {
-    // Un-ticking also removes the transaction recorded when it was ticked.
+    // Un-ticking also removes the transaction and debt payment recorded when it was ticked.
     if (item.done) return setPlanItemDone(plan.id, item.id, false);
-    if (!account) return setPlanItemDone(plan.id, item.id, true);
-    Alert.alert('Mark as done', `Also record this ${item.type} in "${account.name}"?`, [
+    const debt = debtOf(item);
+    const date = item.date ?? today();
+    if (debt && date < debt.startDate) {
+      return Alert.alert('Check the date', `${debt.name} starts on ${formatDate(debt.startDate)}. Edit this item and pick a date on or after it.`);
+    }
+    const debtLine = debt ? `A ${formatMoney(item.amount, currency)} payment on ${formatDate(date)} will be added to "${debt.name}".` : '';
+    if (!account) {
+      if (!debt) return setPlanItemDone(plan.id, item.id, true);
+      return Alert.alert('Mark as done', debtLine, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Mark done', onPress: () => setPlanItemDone(plan.id, item.id, true) },
+      ]);
+    }
+    Alert.alert('Mark as done', `${debtLine ? `${debtLine}\n\n` : ''}Also record this ${item.type} in "${account.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Just mark done', onPress: () => setPlanItemDone(plan.id, item.id, true) },
       { text: 'Mark & record', onPress: () => setPlanItemDone(plan.id, item.id, true, account.id) },
@@ -122,8 +140,18 @@ export default function PlanScreen() {
           <EmptyState icon="list-outline" title="No items yet" message="Add what you plan to spend this money on, and any income you expect." />
         )}
 
-        {expenses.length ? <ItemGroup title="Planned spending" items={expenses} onToggle={toggleDone} onEdit={(i) => openItem({ itemId: i.id })} /> : null}
-        {incomes.length ? <ItemGroup title="Planned income" items={incomes} onToggle={toggleDone} onEdit={(i) => openItem({ itemId: i.id })} /> : null}
+        {expenses.length ? (
+          <ItemGroup
+            title="Planned spending"
+            items={expenses}
+            onToggle={toggleDone}
+            onEdit={(i) => openItem({ itemId: i.id })}
+            debtName={(i) => debtOf(i)?.name}
+          />
+        ) : null}
+        {incomes.length ? (
+          <ItemGroup title="Planned income" items={incomes} onToggle={toggleDone} onEdit={(i) => openItem({ itemId: i.id })} debtName={() => undefined} />
+        ) : null}
         {plan.items.length && !items.length ? <T variant="muted" style={{ textAlign: 'center' }}>No items in this view.</T> : null}
         {plan.note ? <T variant="muted">{plan.note}</T> : null}
       </ScrollView>
@@ -156,12 +184,16 @@ function ItemGroup({
   items,
   onToggle,
   onEdit,
+  debtName,
 }: {
   title: string;
   items: PlanItem[];
   onToggle: (i: PlanItem) => void;
   onEdit: (i: PlanItem) => void;
+  debtName: (i: PlanItem) => string | undefined;
 }) {
+  const details = (item: PlanItem) =>
+    [item.date ? formatDate(item.date) : null, debtName(item) ? `→ ${debtName(item)}` : null, item.category || null].filter(Boolean).join(' · ');
   return (
     <View style={{ gap: space.xs }}>
       <T variant="label">{title}</T>
@@ -181,7 +213,11 @@ function ItemGroup({
               <T style={[{ fontWeight: '600' }, item.done && { textDecorationLine: 'line-through', color: colors.textMuted }]} numberOfLines={1}>
                 {item.label}
               </T>
-              {item.category ? <T variant="caption">{item.category}</T> : null}
+              {details(item) ? (
+                <T variant="caption" numberOfLines={1}>
+                  {details(item)}
+                </T>
+              ) : null}
             </View>
             <Amount cents={item.amount} type={item.type} />
           </Pressable>

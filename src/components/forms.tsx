@@ -7,7 +7,7 @@ import { matchCategories } from '@/lib/categories';
 import { formatDate, fromISODate, toISODate } from '@/lib/format';
 import { colors, radius, space } from '@/lib/theme';
 
-import { Button, Field, Input, Sheet, T } from './ui';
+import { Button, Field, type IconName, Input, Sheet, T } from './ui';
 
 export function DateField({
   label,
@@ -146,6 +146,99 @@ export function CategoryInput({
       ) : null}
       {open && !options.length && !value ? (
         <T variant="caption">Type a category. It’ll be suggested here next time.</T>
+      ) : null}
+    </View>
+  );
+}
+
+export interface SelectOption {
+  id: string;
+  label: string;
+  detail?: string;
+}
+
+/**
+ * Same look as CategoryInput, but the value must be one of `options`: focusing lists them,
+ * typing narrows the list, and leaving without picking keeps the current choice.
+ */
+export function SelectInput({
+  value,
+  onChange,
+  options,
+  placeholder,
+  icon,
+  emptyText = 'No matches.',
+}: {
+  value: string | undefined;
+  onChange: (id: string | undefined) => void;
+  options: SelectOption[];
+  placeholder: string;
+  icon?: IconName;
+  emptyText?: string;
+}) {
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find((o) => o.id === value);
+  const q = query.trim().toLowerCase();
+  const matches = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+
+  const pick = (id: string) => {
+    onChange(id);
+    setOpen(false);
+    inputRef.current?.blur();
+  };
+
+  return (
+    <View style={{ gap: space.xs }}>
+      <View>
+        <Input
+          ref={inputRef}
+          // While open it's a search box (the current choice shows as the placeholder).
+          value={open ? query : (selected?.label ?? '')}
+          onChangeText={setQuery}
+          onFocus={() => {
+            setQuery('');
+            setOpen(true);
+          }}
+          onBlur={() => setOpen(false)}
+          placeholder={open && selected ? selected.label : placeholder}
+          autoCorrect={false}
+          returnKeyType="done"
+          style={{ paddingRight: 40 }}
+        />
+        {value && !open ? (
+          <Pressable hitSlop={10} onPress={() => onChange(undefined)} style={s.clear} accessibilityLabel="Clear selection">
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </Pressable>
+        ) : (
+          <View style={s.clear} pointerEvents="none">
+            <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          </View>
+        )}
+      </View>
+      {open ? (
+        matches.length ? (
+          <View style={s.dropdown}>
+            {matches.map((o, i) => (
+              <Pressable
+                key={o.id}
+                onPress={() => pick(o.id)}
+                style={({ pressed }) => [s.suggestion, i === matches.length - 1 && { borderBottomWidth: 0 }, pressed && { backgroundColor: colors.surfaceHigh }]}
+                accessibilityRole="button"
+                accessibilityLabel={o.label}
+              >
+                {icon ? <Ionicons name={icon} size={16} color={o.id === value ? colors.primary : colors.textFaint} /> : null}
+                <T style={[{ flex: 1 }, o.id === value && { color: colors.primary, fontWeight: '600' }]} numberOfLines={1}>
+                  {o.label}
+                </T>
+                {o.detail ? <T variant="caption">{o.detail}</T> : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <T variant="caption">{emptyText}</T>
+        )
       ) : null}
     </View>
   );

@@ -45,6 +45,12 @@ export interface PlanItem {
   done: boolean;
   /** Transaction recorded in the plan's account when this item was marked done, if any. */
   transactionId?: string;
+  /** When it's planned to happen (YYYY-MM-DD). Used as the date of anything recorded when it's done. */
+  date?: string;
+  /** For a planned debt payment: the debt it pays toward. */
+  debtId?: string;
+  /** The payment added to that debt when this item was marked done. */
+  debtPaymentId?: string;
 }
 
 export interface Plan {
@@ -76,6 +82,9 @@ export interface DebtPayment {
   note?: string;
   /** Transaction recorded in an account for this payment, if any. */
   transactionId?: string;
+  /** Set when this payment came from a plan item being marked done. */
+  planId?: string;
+  planItemId?: string;
   createdAt: string;
 }
 
