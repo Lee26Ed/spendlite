@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Tabs } from 'expo-router/tabs';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
 
-import { colors } from '@/lib/theme';
+import { IconButton } from '@/components/ui';
+import { colors, space } from '@/lib/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -22,6 +24,10 @@ export default function TabsLayout() {
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '700', fontSize: 20 },
         headerShadowVisible: false,
+        headerRight: () => (
+          <IconButton icon="settings-outline" label="Settings" color={colors.textMuted} onPress={() => router.push('/settings')} />
+        ),
+        headerRightContainerStyle: { paddingRight: space.md },
         tabBarStyle: { backgroundColor: colors.bg, borderTopColor: colors.border },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textFaint,
@@ -31,8 +37,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={tab('Accounts', 'wallet-outline', 'wallet')} />
       <Tabs.Screen name="transactions" options={tab('Activity', 'list-outline', 'list')} />
       <Tabs.Screen name="plans" options={tab('Plans', 'clipboard-outline', 'clipboard')} />
+      <Tabs.Screen name="debts" options={tab('Debts', 'card-outline', 'card')} />
       <Tabs.Screen name="summary" options={tab('Summary', 'pie-chart-outline', 'pie-chart')} />
-      <Tabs.Screen name="settings" options={tab('Settings', 'settings-outline', 'settings')} />
     </Tabs>
   );
 }

@@ -35,7 +35,14 @@ export default function AccountScreen() {
         options={{
           title: account.name,
           headerRight: () => (
-            <IconButton icon="create-outline" label="Edit account" onPress={() => router.push({ pathname: '/account-form', params: { id: account.id } })} />
+            <Row gap={space.xs}>
+              <IconButton
+                icon="swap-horizontal"
+                label="Transfer from this account"
+                onPress={() => router.push({ pathname: '/transfer-form', params: { fromAccountId: account.id } })}
+              />
+              <IconButton icon="create-outline" label="Edit account" onPress={() => router.push({ pathname: '/account-form', params: { id: account.id } })} />
+            </Row>
           ),
         }}
       />

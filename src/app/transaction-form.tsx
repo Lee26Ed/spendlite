@@ -69,20 +69,36 @@ export default function TransactionForm() {
     ]);
   };
 
-  const accent = type === 'income' ? colors.income : colors.expense;
+  const accent = type === 'income' ? colors.incomeText : colors.expenseText;
+  const debt = existing?.debtId ? data.debts.find((d) => d.id === existing.debtId) : undefined;
+  const plan = existing?.planId ? data.plans.find((p) => p.id === existing.planId) : undefined;
 
   return (
     <FormScroll contentContainerStyle={{ padding: space.lg, gap: space.xl, paddingBottom: 48 }}>
       <Stack.Screen options={{ title: existing ? 'Edit transaction' : 'New transaction' }} />
 
-      <Segmented
+      <Segmented<TxType | 'transfer'>
         options={[
           { key: 'expense', label: 'Expense', icon: 'arrow-up' },
           { key: 'income', label: 'Income', icon: 'arrow-down' },
+          // Transfers have their own form; only offered when creating.
+          ...(existing ? [] : [{ key: 'transfer' as const, label: 'Transfer', icon: 'swap-horizontal' as const }]),
         ]}
         value={type}
-        onChange={setType}
+        onChange={(t) => {
+          if (t === 'transfer') router.replace({ pathname: '/transfer-form', params: { fromAccountId: accountId } });
+          else setType(t);
+        }}
       />
+
+      {debt ? (
+        <T variant="caption">
+          Recorded from a payment on “{debt.name}”. Edit or delete it from that debt so the loan balance stays right.
+        </T>
+      ) : null}
+      {plan ? (
+        <T variant="caption">Recorded from the plan “{plan.name}”. Un-ticking the item there removes this transaction.</T>
+      ) : null}
 
       <View style={[s.amountBox, { borderColor: accent }]}>
         <T variant="label">{type === 'income' ? 'Amount received' : 'Amount spent'}</T>

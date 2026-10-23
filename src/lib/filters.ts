@@ -25,7 +25,7 @@ export const TX_SORTS: { key: TxSort; label: string }[] = [
 
 export interface TxFilter {
   search: string;
-  type: 'all' | TxType;
+  type: 'all' | TxType | 'transfer';
   accountIds: string[];
   categories: string[];
   period: PeriodKey;
@@ -80,25 +80,48 @@ export function countActiveFilters(f: TxFilter, lockedAccount = false) {
   return n;
 }
 
-export function applyTxFilter(txs: Transaction[], f: TxFilter, accounts: Account[]): Transaction[] {
+/**
+ * Filters, searches and sorts transactions. With `collapseTransfers`, a transfer whose both legs are
+ * visible shows once (as its outgoing leg) — for lists spanning several accounts.
+ */
+export function applyTxFilter(
+  txs: Transaction[],
+  f: TxFilter,
+  accounts: Account[],
+  opts: { collapseTransfers?: boolean } = {},
+): Transaction[] {
   const accountNames = new Map(accounts.map((a) => [a.id, a.name.toLowerCase()]));
   const q = f.search.trim().toLowerCase();
   const accountSet = new Set(f.accountIds);
   const catSet = new Set(f.categories);
+  // Both account names of each transfer, so searching either side finds it.
+  const transferNames = new Map<string, string>();
+  if (q) {
+    for (const t of txs) {
+      if (t.transferId) transferNames.set(t.transferId, `${transferNames.get(t.transferId) ?? ''} ${accountNames.get(t.accountId) ?? ''}`);
+    }
+  }
 
   const result = inPeriod(txs, f.period, f.from, f.to).filter((t) => {
-    if (f.type !== 'all' && t.type !== f.type) return false;
+    // Income/Expenses mean real money in/out; transfers have their own filter.
+    if (f.type === 'transfer' ? !t.transferId : f.type !== 'all' && (t.type !== f.type || !!t.transferId)) return false;
     if (accountSet.size && !accountSet.has(t.accountId)) return false;
     if (catSet.size && !catSet.has(t.category)) return false;
     if (q) {
-      const haystack = [t.category, t.note ?? '', accountNames.get(t.accountId) ?? '', (t.amount / 100).toFixed(2), t.date]
-        .join(' ')
-        .toLowerCase();
+      const names = t.transferId ? (transferNames.get(t.transferId) ?? '') : (accountNames.get(t.accountId) ?? '');
+      const haystack = [t.category, t.note ?? '', names, (t.amount / 100).toFixed(2), t.date].join(' ').toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     return true;
   });
 
+  if (opts.collapseTransfers) {
+    const outgoing = new Set(result.filter((t) => t.transferId && t.type === 'expense').map((t) => t.transferId));
+    return sortTransactions(
+      result.filter((t) => !(t.transferId && t.type === 'income' && outgoing.has(t.transferId))),
+      f.sort,
+    );
+  }
   return sortTransactions(result, f.sort);
 }
 

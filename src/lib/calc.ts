@@ -35,11 +35,18 @@ export interface Overall extends Totals {
   balance: Cents;
 }
 
+/** Moving money between your own accounts isn't income or spending. */
+export const isTransfer = (t: Transaction) => !!t.transferId;
+export const withoutTransfers = (txs: Transaction[]) => txs.filter((t) => !t.transferId);
+
 export function overallSummary(accounts: Account[], txs: Transaction[]): Overall {
   const ids = new Set(accounts.map((a) => a.id));
-  const totals = totalsOf(txs.filter((t) => ids.has(t.accountId)));
+  const own = txs.filter((t) => ids.has(t.accountId));
+  // Balance counts every leg (a transfer to an archived account does leave these accounts);
+  // money in / spent leave transfers out.
+  const totals = totalsOf(withoutTransfers(own));
   const opening = accounts.reduce((s, a) => s + a.openingBalance, 0);
-  return { ...totals, opening, balance: opening + totals.net };
+  return { ...totals, opening, balance: opening + totalsOf(own).net };
 }
 
 export interface CategoryTotal {
@@ -51,7 +58,7 @@ export interface CategoryTotal {
 export function categoryBreakdown(txs: Transaction[], type: TxType): CategoryTotal[] {
   const map = new Map<string, CategoryTotal>();
   for (const t of txs) {
-    if (t.type !== type) continue;
+    if (t.type !== type || isTransfer(t)) continue;
     const key = t.category || 'Uncategorized';
     const entry = map.get(key) ?? { category: key, total: 0, count: 0 };
     entry.total += t.amount;
@@ -78,7 +85,7 @@ export function monthlySeries(txs: Transaction[], months = 6): MonthPoint[] {
   const byKey = new Map(points.map((p) => [p.key, p]));
   for (const t of txs) {
     const p = byKey.get(monthKey(t.date));
-    if (!p) continue;
+    if (!p || isTransfer(t)) continue;
     if (t.type === 'income') p.income += t.amount;
     else p.expense += t.amount;
   }

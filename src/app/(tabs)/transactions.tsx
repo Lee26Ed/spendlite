@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { TransactionList, TxControls } from '@/components/transactions';
 import { Button, Card, EmptyState, Fab, Row, Stat, T } from '@/components/ui';
-import { totalsOf } from '@/lib/calc';
+import { totalsOf, withoutTransfers } from '@/lib/calc';
 import { applyTxFilter, defaultTxFilter, type TxFilter } from '@/lib/filters';
 import { useData } from '@/lib/store';
 import { space } from '@/lib/theme';
@@ -13,8 +13,9 @@ export default function ActivityScreen() {
   const { data } = useData();
   const [filter, setFilter] = useState<TxFilter>(defaultTxFilter);
 
-  const visible = useMemo(() => applyTxFilter(data.transactions, filter, data.accounts), [data.transactions, data.accounts, filter]);
-  const totals = useMemo(() => totalsOf(visible), [visible]);
+  const visible = useMemo(() => applyTxFilter(data.transactions, filter, data.accounts, { collapseTransfers: true }), [data.transactions, data.accounts, filter]);
+  // Transfers move money between your own accounts, so they are not money in or out.
+  const totals = useMemo(() => totalsOf(withoutTransfers(visible)), [visible]);
 
   if (!data.accounts.length) {
     return (

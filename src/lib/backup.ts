@@ -5,7 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { CURRENCIES } from './format';
 import { accountColors } from './theme';
 import { newId } from './store';
-import type { Account, AppData, Plan, Transaction, TxType } from './types';
+import type { Account, AppData, Debt, DebtPayment, Plan, Transaction, TxType } from './types';
 
 const CSV_HEADER = ['date', 'account', 'type', 'category', 'amount', 'note'];
 
@@ -106,11 +106,27 @@ function validateBackup(raw: unknown): AppData {
   const plans = (Array.isArray(data.plans) ? data.plans : []).filter(
     (p: Plan) => isStr(p?.id) && isStr(p?.name) && isNum(p?.startingAmount) && Array.isArray(p?.items),
   );
+  const methods = ['none', 'daily', 'compound', 'simple'];
+  const debts = (Array.isArray(data.debts) ? data.debts : [])
+    .filter(
+      (d: Debt) =>
+        isStr(d?.id) && isStr(d?.name) && isNum(d?.principal) && isStr(d?.startDate) && methods.includes(d?.method) && Array.isArray(d?.payments),
+    )
+    .map((d) => ({
+      ...d,
+      downPayment: isNum(d.downPayment) ? d.downPayment : 0,
+      rate: isNum(d.rate) ? d.rate : 0,
+      payments: d.payments
+        .filter((p: DebtPayment) => isStr(p?.id) && isStr(p?.date) && isNum(p?.amount))
+        .map((p) => ({ ...p, createdAt: p.createdAt ?? p.date })),
+      createdAt: d.createdAt ?? new Date().toISOString(),
+    }));
   return {
     version: 1,
     accounts: accounts.map((a, i) => ({ ...a, kind: a.kind ?? 'other', color: a.color ?? accountColors[i % accountColors.length] })),
     transactions: transactions.map((t) => ({ ...t, category: t.category ?? 'Other', createdAt: t.createdAt ?? new Date().toISOString() })),
     plans,
+    debts,
     settings: {
       currency: isStr(data.settings?.currency) && CURRENCIES.includes(data.settings.currency) ? data.settings.currency : 'BZD',
       lockTimeout: data.settings?.lockTimeout ?? 0,
@@ -183,7 +199,7 @@ function csvToData(text: string, existing: AppData): { data: AppData; skipped: n
     transactions.push(tx);
   }
 
-  return { data: { ...existing, accounts: newAccounts, transactions, plans: [] }, skipped };
+  return { data: { ...existing, accounts: newAccounts, transactions, plans: [], debts: [] }, skipped };
 }
 
 export type ImportResult =

@@ -1,20 +1,22 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Switch, View } from 'react-native';
+import { Alert, Switch, View } from 'react-native';
 
 import { CategoryInput } from '@/components/forms';
 import { Button, EmptyState, Field, FormScroll, Input, Row, Segmented, T } from '@/components/ui';
 import { categorySuggestions } from '@/lib/categories';
-import { centsToInput, parseMoney } from '@/lib/format';
-import { newId, useData } from '@/lib/store';
+import { centsToInput, formatDate, parseMoney } from '@/lib/format';
+import { findPlanItemTransaction, newId, useData } from '@/lib/store';
 import { colors, space } from '@/lib/theme';
 import type { PlanItem, TxType } from '@/lib/types';
 
 export default function PlanItemForm() {
   const params = useLocalSearchParams<{ planId: string; itemId?: string; type?: TxType }>();
-  const { data, updatePlan } = useData();
+  const { data, savePlanItem, deletePlanItem } = useData();
   const plan = data.plans.find((p) => p.id === params.planId);
   const existing = plan?.items.find((i) => i.id === params.itemId);
+  const recorded = plan && existing ? findPlanItemTransaction(plan, existing, data.transactions) : undefined;
+  const recordedIn = data.accounts.find((a) => a.id === recorded?.accountId);
 
   const [type, setType] = useState<TxType>(existing?.type ?? params.type ?? 'expense');
   const [label, setLabel] = useState(existing?.label ?? '');
@@ -35,15 +37,31 @@ export default function PlanItemForm() {
     };
     setErrors(next);
     if (next.label || next.amount || cents === null) return;
-    const item: PlanItem = { id: existing?.id ?? newId(), type, label: label.trim(), amount: cents, category: category.trim(), done };
-    updatePlan(plan.id, { items: existing ? plan.items.map((i) => (i.id === item.id ? item : i)) : [...plan.items, item] });
+    const item: PlanItem = {
+      id: existing?.id ?? newId(),
+      type,
+      label: label.trim(),
+      amount: cents,
+      category: category.trim(),
+      done,
+      transactionId: existing?.transactionId,
+    };
+    savePlanItem(plan.id, item);
     router.back();
   };
 
   const remove = () => {
     if (!existing) return;
-    updatePlan(plan.id, { items: plan.items.filter((i) => i.id !== existing.id) });
-    router.back();
+    const finish = (removeTransaction: boolean) => {
+      deletePlanItem(plan.id, existing.id, { removeTransaction });
+      router.back();
+    };
+    if (!recorded) return finish(false);
+    Alert.alert('Remove from plan?', `This item was recorded as a transaction in "${recordedIn?.name ?? 'an account'}".`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Keep the transaction', onPress: () => finish(false) },
+      { text: 'Delete it too', style: 'destructive', onPress: () => finish(true) },
+    ]);
   };
 
   return (
@@ -83,6 +101,14 @@ export default function PlanItemForm() {
         </View>
         <Switch value={done} onValueChange={setDone} trackColor={{ true: colors.primary, false: colors.surfaceHigh }} thumbColor={colors.text} />
       </Row>
+
+      {recorded ? (
+        <T variant="caption" style={!done ? { color: colors.expenseText } : undefined}>
+          {done
+            ? `Recorded in ${recordedIn?.name ?? 'an account'} on ${formatDate(recorded.date)}. Saving changes here updates that transaction.`
+            : `Saving will remove the transaction recorded in ${recordedIn?.name ?? 'an account'}.`}
+        </T>
+      ) : null}
 
       <View style={{ gap: space.sm }}>
         <Button title={existing ? 'Save changes' : 'Add to plan'} icon="checkmark" onPress={save} />

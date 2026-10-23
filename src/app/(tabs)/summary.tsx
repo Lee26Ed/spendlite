@@ -5,7 +5,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { AccountBadge } from '@/components/accounts';
 import { CategoryBars, MonthlyChart } from '@/components/charts';
 import { Amount, Button, Card, Chip, EmptyState, HeroCard, HeroPanel, onHero, ProgressBar, Row, Segmented, Stat, T } from '@/components/ui';
-import { categoryBreakdown, monthlySeries, overallSummary, summarizeAccount, totalsOf } from '@/lib/calc';
+import { categoryBreakdown, monthlySeries, overallSummary, summarizeAccount, totalsOf, withoutTransfers } from '@/lib/calc';
 import { inPeriod, PERIODS, type PeriodKey } from '@/lib/filters';
 import { useData } from '@/lib/store';
 import { colors, space } from '@/lib/theme';
@@ -26,7 +26,7 @@ export default function SummaryScreen() {
   const scopedTxs = useMemo(() => (scope === 'all' ? periodTxs : periodTxs.filter((t) => t.accountId === scope)), [periodTxs, scope]);
 
   const overall = useMemo(() => overallSummary(accounts, data.transactions), [accounts, data.transactions]);
-  const periodTotals = useMemo(() => totalsOf(periodTxs), [periodTxs]);
+  const periodTotals = useMemo(() => totalsOf(withoutTransfers(periodTxs)), [periodTxs]);
   const months = useMemo(
     () => monthlySeries(scope === 'all' ? activeTxs : activeTxs.filter((t) => t.accountId === scope), 6),
     [activeTxs, scope],

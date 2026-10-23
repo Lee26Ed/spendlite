@@ -109,7 +109,12 @@ export default function AccountsScreen() {
         }
         ListFooterComponent={
           data.accounts.length ? (
-            <Button title="New account" kind="secondary" icon="add" onPress={() => router.push('/account-form')} style={{ marginTop: space.sm }} />
+            <Row style={{ marginTop: space.sm }}>
+              <Button title="New account" kind="secondary" icon="add" onPress={() => router.push('/account-form')} style={{ flex: 1 }} />
+              {active.length > 1 ? (
+                <Button title="Transfer" kind="secondary" icon="swap-horizontal" onPress={() => router.push('/transfer-form')} style={{ flex: 1 }} />
+              ) : null}
+            </Row>
           ) : undefined
         }
       />

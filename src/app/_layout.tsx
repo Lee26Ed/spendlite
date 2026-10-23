@@ -44,6 +44,11 @@ export default function RootLayout() {
               <Stack.Screen name="transaction-form" options={{ presentation: 'modal', title: 'Transaction' }} />
               <Stack.Screen name="plan-form" options={{ presentation: 'modal', title: 'Plan' }} />
               <Stack.Screen name="plan-item" options={{ presentation: 'modal', title: 'Plan item' }} />
+              <Stack.Screen name="transfer-form" options={{ presentation: 'modal', title: 'Transfer' }} />
+              <Stack.Screen name="debt/[id]" options={{ title: 'Debt' }} />
+              <Stack.Screen name="debt-form" options={{ presentation: 'modal', title: 'Debt' }} />
+              <Stack.Screen name="debt-payment" options={{ presentation: 'modal', title: 'Payment' }} />
+              <Stack.Screen name="settings" options={{ title: 'Settings' }} />
             </Stack>
             <Gate />
           </AuthProvider>

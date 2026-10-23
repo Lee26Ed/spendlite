@@ -13,8 +13,52 @@ import type { Account, Transaction } from '@/lib/types';
 import { DateField } from './forms';
 import { Amount, Button, Chip, IconButton, Input, OptionList, Row, Segmented, Sheet, T } from './ui';
 
-export function TransactionRow({ tx, account, showAccount }: { tx: Transaction; account?: Account; showAccount?: boolean }) {
+export function TransactionRow({
+  tx,
+  account,
+  counterpart,
+  showAccount,
+}: {
+  tx: Transaction;
+  account?: Account;
+  /** For a transfer: the account on the other side. */
+  counterpart?: Account;
+  showAccount?: boolean;
+}) {
   const income = tx.type === 'income';
+  if (tx.transferId) {
+    // In multi-account lists the outgoing leg stands for the whole transfer.
+    const combined = showAccount && !income;
+    const title = combined
+      ? `${account?.name ?? '?'} → ${counterpart?.name ?? '?'}`
+      : income
+        ? `Transfer from ${counterpart?.name ?? 'another account'}`
+        : `Transfer to ${counterpart?.name ?? 'another account'}`;
+    const subtitle = [showAccount && !combined ? account?.name : null, tx.note].filter(Boolean).join(' · ');
+    return (
+      <Pressable
+        onPress={() => router.push({ pathname: '/transfer-form', params: { id: tx.transferId } })}
+        style={({ pressed }) => [s.row, pressed && { backgroundColor: colors.surfaceAlt }]}
+        accessibilityLabel={`${title} ${(tx.amount / 100).toFixed(2)}`}
+      >
+        <View style={[s.icon, { backgroundColor: colors.primarySoft }]}>
+          <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <T numberOfLines={1} style={{ fontWeight: '600' }}>
+            {title}
+          </T>
+          {subtitle ? (
+            <T variant="caption" numberOfLines={1}>
+              {subtitle}
+            </T>
+          ) : null}
+        </View>
+        {combined ? <Amount cents={tx.amount} /> : <Amount cents={tx.amount} type={tx.type} />}
+      </Pressable>
+    );
+  }
+
   const subtitle = [showAccount ? account?.name : null, tx.note].filter(Boolean).join(' · ');
   return (
     <Pressable
@@ -60,6 +104,23 @@ export function TransactionList({
 }) {
   const { data } = useData();
   const accounts = useMemo(() => new Map(data.accounts.map((a) => [a.id, a])), [data.accounts]);
+  // transferId → the account on each side, to label transfer rows.
+  const transferSides = useMemo(() => {
+    const map = new Map<string, { from?: string; to?: string }>();
+    for (const t of data.transactions) {
+      if (!t.transferId) continue;
+      const sides = map.get(t.transferId) ?? {};
+      if (t.type === 'expense') sides.from = t.accountId;
+      else sides.to = t.accountId;
+      map.set(t.transferId, sides);
+    }
+    return map;
+  }, [data.transactions]);
+  const counterpartOf = (t: Transaction) => {
+    const sides = t.transferId ? transferSides.get(t.transferId) : undefined;
+    const id = t.type === 'expense' ? sides?.to : sides?.from;
+    return id ? accounts.get(id) : undefined;
+  };
 
   const sections = useMemo<Section[]>(() => {
     if (!txs.length) return [];
@@ -93,7 +154,7 @@ export function TransactionList({
       }
       renderItem={({ item }) => (
         <View>
-          <TransactionRow tx={item} account={accounts.get(item.accountId)} showAccount={showAccount} />
+          <TransactionRow tx={item} account={accounts.get(item.accountId)} counterpart={counterpartOf(item)} showAccount={showAccount} />
           {!sections[0]?.title ? (
             <T variant="caption" style={{ marginLeft: 64, marginTop: -6, marginBottom: 6 }}>
               {formatDate(item.date)}
@@ -148,6 +209,7 @@ export function TxControls({
           { key: 'all', label: 'All' },
           { key: 'income', label: 'Income' },
           { key: 'expense', label: 'Expenses' },
+          { key: 'transfer', label: 'Transfers' },
         ]}
         value={filter.type}
         onChange={(type) => onChange({ ...filter, type })}

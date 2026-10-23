@@ -5,7 +5,6 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Amount, Button, Card, Chip, EmptyState, HeroCard, IconButton, onHero, ProgressBar, Row, Segmented, T } from '@/components/ui';
 import { summarizePlan } from '@/lib/calc';
-import { today } from '@/lib/format';
 import { useData } from '@/lib/store';
 import { colors, radius, space } from '@/lib/theme';
 import type { PlanItem, TxType } from '@/lib/types';
@@ -18,7 +17,7 @@ const NEXT_SORT: Record<ItemSort, ItemSort> = { added: 'amount', amount: 'name',
 
 export default function PlanScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, updatePlan, addTransaction } = useData();
+  const { data, setPlanItemDone } = useData();
   const plan = data.plans.find((p) => p.id === id);
   const [filter, setFilter] = useState<ItemFilter>('all');
   const [sort, setSort] = useState<ItemSort>('added');
@@ -36,30 +35,17 @@ export default function PlanScreen() {
 
   if (!plan || !summary) return <EmptyState icon="alert-circle-outline" title="Plan not found" />;
 
-  const setItems = (next: PlanItem[]) => updatePlan(plan.id, { items: next });
   const openItem = (params: { itemId?: string; type?: TxType }) =>
     router.push({ pathname: '/plan-item', params: { planId: plan.id, ...params } });
 
   const toggleDone = (item: PlanItem) => {
-    const mark = () => setItems(plan.items.map((i) => (i.id === item.id ? { ...i, done: !i.done } : i)));
-    if (item.done || !account) return mark();
+    // Un-ticking also removes the transaction recorded when it was ticked.
+    if (item.done) return setPlanItemDone(plan.id, item.id, false);
+    if (!account) return setPlanItemDone(plan.id, item.id, true);
     Alert.alert('Mark as done', `Also record this ${item.type} in "${account.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Just mark done', onPress: mark },
-      {
-        text: 'Mark & record',
-        onPress: () => {
-          mark();
-          addTransaction({
-            accountId: account.id,
-            type: item.type,
-            amount: item.amount,
-            category: item.category || 'Other',
-            note: `${item.label} (plan: ${plan.name})`,
-            date: today(),
-          });
-        },
-      },
+      { text: 'Just mark done', onPress: () => setPlanItemDone(plan.id, item.id, true) },
+      { text: 'Mark & record', onPress: () => setPlanItemDone(plan.id, item.id, true, account.id) },
     ]);
   };
 

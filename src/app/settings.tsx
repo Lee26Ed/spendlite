@@ -52,14 +52,14 @@ export default function SettingsScreen() {
       const incoming = result.data;
       Alert.alert(
         'Import backup',
-        `${result.fileName} has ${incoming.accounts.length} accounts, ${incoming.transactions.length} transactions and ${incoming.plans.length} plans.`,
+        `${result.fileName} has ${incoming.accounts.length} accounts, ${incoming.transactions.length} transactions, ${incoming.plans.length} plans and ${incoming.debts.length} debts.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Merge',
             onPress: () => {
               const c = store.mergeIn(incoming);
-              Alert.alert('Merged', `Added ${c.accounts} accounts, ${c.transactions} transactions and ${c.plans} plans.`);
+              Alert.alert('Merged', `Added ${c.accounts} accounts, ${c.transactions} transactions, ${c.plans} plans and ${c.debts} debts.`);
             },
           },
           {
@@ -76,7 +76,7 @@ export default function SettingsScreen() {
     });
 
   const eraseAll = () =>
-    Alert.alert('Erase all data?', 'Every account, transaction and plan will be deleted from this device. Export a backup first if you might need it.', [
+    Alert.alert('Erase all data?', 'Every account, transaction, plan and debt will be deleted from this device. Export a backup first if you might need it.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Erase', style: 'destructive', onPress: store.wipe },
     ]);
@@ -124,7 +124,7 @@ export default function SettingsScreen() {
         <Item
           icon="cloud-download-outline"
           title="Export backup (JSON)"
-          subtitle="Everything: accounts, transactions, plans and settings."
+          subtitle="Everything: accounts, transactions, plans, debts and settings."
           onPress={() => run('json', () => exportJson(data))}
           busy={busy === 'json'}
         />

@@ -7,6 +7,8 @@ A private, offline expense tracker built with React Native + Expo (SDK 58, Expo 
 - **Security**: unlocks with your phone's own fingerprint (or Face ID) from the first launch. No separate app PIN. If the sensor fails, the system prompt can fall back to your device screen lock. Auto-locks when the app is backgrounded (immediately, 30s, 1 min or 5 min).
 - **Multiple accounts**: bank, cash, card, savings, e-wallet and other accounts, each with its own starting balance, color, note, and an option to archive it.
 - **Income & expenses**: record money in and out with a category, date and note. The category field remembers what you have typed before and suggests matches as you type. Each account and the home screen show **money in**, **spent**, and the **balance** (starting balance + in − out).
+- **Transfers**: move money between your accounts. Both balances update; transfers aren't counted as money in or spending.
+- **Debts**: track loans with a total, optional down payment and interest: amortized daily on the balance (balance × rate ÷ 365 × days since the last payment), compound (daily/monthly/yearly), simple flat interest over a term, or none. Log payments to see paid vs. left, interest charged, today's payoff amount and a payoff estimate. Each payment can also be recorded as an expense in an account.
 - **Search, filter, sort**: search by category, note, account, amount or date; filter by type, date range (presets or custom), account and category; sort by date, amount or category. Available on the Activity tab and on each account.
 - **Plans**: start with an amount (or pull in an account's balance), add planned expenses and income, and see what you'll have **left after the plan**, how much of your money is allocated, and whether you're over budget. Tick items off as done to track *spent so far* and *available now*. If the plan is linked to an account, a done item can be recorded there as a transaction in the same step.
 - **Summary tab**: total balance, a period's in/out/net and savings rate, a summary card per account, income vs. expenses for the last 6 months, and spending/income by category.
@@ -33,16 +35,20 @@ The app icon, Android adaptive/themed icon and splash image live in `assets/`.
 ```
 src/
   app/                    Expo Router screens
-    (tabs)/               Accounts · Activity · Plans · Summary · Settings
+    (tabs)/               Accounts · Activity · Plans · Debts · Summary
     account/[id].tsx      Account detail with filtered transaction list
     plan/[id].tsx         Plan detail and its line items
-    *-form.tsx            Modal forms for accounts, transactions and plans
+    debt/[id].tsx         Debt detail with payment schedule
+    *-form.tsx            Modal forms for accounts, transactions, transfers, plans and debts
     plan-item.tsx         Add/edit a planned expense or income
+    debt-payment.tsx      Add/edit a debt payment
+    settings.tsx          Settings (gear icon in the header)
   components/             UI kit (incl. keyboard-aware FormScroll), lock screen, lists, charts
   lib/
     auth.tsx              Device fingerprint unlock, auto-lock
     store.tsx             App data (AsyncStorage-persisted) and its mutations
     calc.ts               Totals, balances, plan and summary math
+    debt.ts               Loan interest, payment schedule and payoff math
     filters.ts            Search / filter / sort
     backup.ts             JSON + CSV import/export
 ```
